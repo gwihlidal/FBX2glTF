@@ -8,13 +8,12 @@ if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
 endif ()
 
 set(CMAKE_CXX_STANDARD 11)
-find_package(Threads REQUIRED)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 include(ExternalProject)
 
 # FBX
-foreach (FBXSDK_VERSION "2019.0" "2018.1.1")
+foreach (FBXSDK_VERSION "2019.2")
   find_package(FBX)
   if (FBXSDK_FOUND)
     break()
@@ -28,6 +27,32 @@ if (NOT FBXSDK_FOUND)
     " - Linux: ${FBXSDK_LINUX_ROOT}"
   )
 endif()
+
+set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+find_package(Threads REQUIRED)
+find_package(Iconv QUIET)
+
+if (WIN32)
+  # this will suffice for now; don't really care about 32-bit
+  set(LIBXML2_INCLUDE_DIRS ${FBXSDK_INCLUDE_DIR})
+  set(LIBXML2_LIBRARIES ${FBXSDK_ROOT}/lib/vs2017/x64/release/libxml2-mt.lib)
+  set(LIBXML2_LIBRARIES_DEBUG ${FBXSDK_ROOT}/lib/vs2017/x64/debug/libxml2-mt.lib)
+  if (NOT LIBXML2_INCLUDE_DIRS OR NOT LIBXML2_LIBRARIES)
+    message(FATAL_ERROR "Cannot find libxml2.lib in the expected location.")
+  endif()
+
+  set(ZLIB_INCLUDE_DIRS ${FBXSDK_INCLUDE_DIR})
+  set(ZLIB_LIBRARIES ${FBXSDK_ROOT}/lib/vs2017/x64/release/zlib-mt.lib)
+  set(ZLIB_LIBRARIES_DEBUG ${FBXSDK_ROOT}/lib/vs2017/x64/debug/zlib-mt.lib)
+  if (NOT ZLIB_LIBRARIES)
+    message(FATAL_ERROR "Cannot find zlib.lib in the expected location.")
+  endif()
+
+else()
+  find_package(LibXml2 REQUIRED)
+  find_package(ZLIB REQUIRED)
+endif()
+
 
 # DRACO
 ExternalProject_Add(Draco
@@ -233,8 +258,25 @@ target_link_libraries(libFBX2glTF
   ${CMAKE_THREAD_LIBS_INIT}
 )
 
+if (WIN32)
+  target_link_libraries(libFBX2glTF
+    optimized ${LIBXML2_LIBRARIES}
+    debug ${LIBXML2_LIBRARIES_DEBUG}
+    optimized ${ZLIB_LIBRARIES}
+    debug ${ZLIB_LIBRARIES_DEBUG}
+  )
+else()
+  target_link_libraries(libFBX2glTF
+    ${LIBXML2_LIBRARIES}
+    ${ZLIB_LIBRARIES}
+  )
+endif()
+
 target_include_directories(libFBX2glTF PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_include_directories(libFBX2glTF SYSTEM PUBLIC
+  Iconv::Iconv
   ${FBXSDK_INCLUDE_DIR}
   ${DRACO_INCLUDE_DIR}
   ${MATHFU_INCLUDE_DIRS}
@@ -243,7 +285,14 @@ target_include_directories(libFBX2glTF PUBLIC
   ${STB_INCLUDE_DIR}
   ${CPPCODEC_INCLUDE_DIR}
   ${FMT_INCLUDE_DIR}
+  ${LIBXML2_INCLUDE_DIR}
+  ${ZLIB_INCLUDE_DIRS}
 )
+
+if (Iconv_FOUND)
+  target_link_libraries(libFBX2glTF Iconv::Iconv)
+  target_include_directories(libFBX2glTF SYSTEM PUBLIC Iconv::Iconv)
+endif()
 
 target_include_directories(appFBX2glTF PUBLIC
   ${CXXOPTS_INCLUDE_DIR}
